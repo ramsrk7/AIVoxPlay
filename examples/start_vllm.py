@@ -1,5 +1,3 @@
-# tests/test_runpod_flow.py
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -9,6 +7,7 @@ import atexit
 from aivoxplay.deploy.deploy_runpod import DeployRunPod, DEFAULT_START_CMD
 
 rp = DeployRunPod(model="unsloth/orpheus-3b-0.1-ft")
+HF_TOKEN=os.getenv("HF_TOKEN")
 
 def cleanup():
     """Ensure pod is stopped and deleted on exit."""
@@ -34,15 +33,20 @@ def main():
 
     # 2. Create template
     tpl_id = rp.create_template(
-        name="orpheus-template-h100",
+        name="orpheus-template-h100-3",
         image="vllm/vllm-openai:latest",
         start_command=DEFAULT_START_CMD,
         ports=["8000/http"],
         volume_gb=30,
-        mount_path="/workspace",
-        env={"HF_TOKEN": "xxxx"},
+        mount_path="/root/.cache/huggingface",
+        env={
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "HF_TOKEN": HF_TOKEN
+        },
         serverless=False,
     )
+    
+    #tpl_id = "wrce975nbo"
     print("Template ID:", tpl_id)
 
     # 3. Start pod
@@ -52,9 +56,7 @@ def main():
         gpu_count=1,
         cloud_type="SECURE",
         volume_gb=30,
-        ports=["8000/http"],
-        env={"HF_TOKEN": "xxxx"},
-    )
+        ports=["8000/http"])
     print("Pod ID:", pod_id)
 
     # 4. Simulate workload
