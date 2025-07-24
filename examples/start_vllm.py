@@ -5,7 +5,7 @@ import sys
 import time
 import atexit
 from aivoxplay.deploy.deploy_runpod import DeployRunPod, DEFAULT_START_CMD
-
+import os
 rp = DeployRunPod(model="unsloth/orpheus-3b-0.1-ft")
 HF_TOKEN=os.getenv("HF_TOKEN")
 
@@ -33,7 +33,7 @@ def main():
 
     # 2. Create template
     tpl_id = rp.create_template(
-        name="orpheus-template-h100-3",
+        name="orpheus-template-h100-4",
         image="vllm/vllm-openai:latest",
         start_command=DEFAULT_START_CMD,
         ports=["8000/http"],
@@ -51,8 +51,8 @@ def main():
 
     # 3. Start pod
     pod_id = rp.start_pod(
-        name="orpheus-pod",
-        gpu_type="NVIDIA H100 80GB HBM3",
+        name="orpheus-pod-2",
+        gpu_type="NVIDIA A100 80GB PCIe",
         gpu_count=1,
         cloud_type="SECURE",
         volume_gb=30,

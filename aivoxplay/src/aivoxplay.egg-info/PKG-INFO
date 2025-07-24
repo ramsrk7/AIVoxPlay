@@ -4,6 +4,10 @@ Version: 0.1.0
 Summary: Add your description here
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
-Requires-Dist: numpy<2
 Requires-Dist: runpod>=1.7.13
-Requires-Dist: torch>=2.7.1
+Requires-Dist: torch==2.2.2
+Requires-Dist: numpy==1.26.4
+Requires-Dist: soundfile
+Requires-Dist: transformers
+Requires-Dist: openai>=1.97.1
+Requires-Dist: snac>=1.2.1

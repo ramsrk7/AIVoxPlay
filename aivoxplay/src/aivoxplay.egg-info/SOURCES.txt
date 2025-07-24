@@ -8,3 +8,9 @@ src/aivoxplay.egg-info/requires.txt
 src/aivoxplay.egg-info/top_level.txt
 src/aivoxplay/deploy/__init__.py
 src/aivoxplay/deploy/deploy_runpod.py
+src/aivoxplay/tts/__init__.py
+src/aivoxplay/tts/base.py
+src/aivoxplay/tts/factory.py
+src/aivoxplay/tts/orpheus.py
+src/aivoxplay/utils/__init__.py
+src/aivoxplay/utils/tts.py

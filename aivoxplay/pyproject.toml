@@ -9,7 +9,9 @@ dependencies = [
     "torch==2.2.2",
     "numpy==1.26.4",
     "soundfile",
-    "transformers"
+    "transformers",
+    "openai>=1.97.1",
+    "snac>=1.2.1",
 ]
 
 [build-system]
