@@ -10,6 +10,8 @@ import openai
 from transformers import AutoTokenizer
 from snac import SNAC
 import torch
+import numpy as np
+from typing import Sequence, Union
 HF_TOKEN=os.getenv("HF_TOKEN")
 
 
@@ -29,6 +31,11 @@ class OrpheusTTS(BaseTTS):
         self.voices = ["tara","leah","jess","leo","dan","mia","zac","zoe"]
         self.endpoint = endpoint
         self.api_key = api_key
+        self._tok_base_id = self.tokenizer.encode("<custom_token_0>", add_special_tokens=False, return_tensors=None)[0]
+        self._tok_find_id = 128257           # token_to_find
+        self._tok_remove_id = 128258         # token_to_remove
+        self._tok_offset = 128266            # offset removed later
+        self._n_layers = 7                   # ORPHEUS_N_LAYERS
         
 
     def _build_prompt_input(self, text: str, voice: str = "tara") -> str:
@@ -49,6 +56,7 @@ class OrpheusTTS(BaseTTS):
         decoded_prompt = self.tokenizer.decode(token_sequence, skip_special_tokens=False)
 
         return decoded_prompt
+    
     
     def _decode_tokens(self, tokens):
         custom_tokens = re.findall(r'<custom_token_\d+>', tokens)
@@ -108,7 +116,6 @@ class OrpheusTTS(BaseTTS):
             print("\nCould not generate audio, no codes to process.")
             return
 
-
     def speak(self, text: str, voice: str = "tara", stream: bool = False):
 
         if voice not in self.voices:
@@ -118,12 +125,56 @@ class OrpheusTTS(BaseTTS):
         else:
             return self._non_streaming_speak(text, voice)
 
+
     def _streaming_speak(self, text: str, voice: str):
-        # Stream via websocket or token generator
-        # convert text to tokens
-        # call openai api
-        # convert back
-       raise NotImplementedError()
+        """
+        Stream audio tokens, decode in ~2k-char batches ending with '>', and yield (audio, sr).
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        formatted_prompt = self._build_prompt_input(text, voice)
+
+        stream = OrpheusTTS.call_completions_endpoint_stream(
+            endpoint=self.endpoint,
+            api_key=self.api_key,
+            model_name=self.MODEL_NAME,
+            prompt=formatted_prompt,
+        )
+
+        THRESH = 2000
+        final_response = ""  # buffer of tokens/chars we haven't decoded yet
+
+        for chunk in stream:
+            if not chunk:
+                continue
+
+            final_response += chunk
+
+            # Decode in batches once threshold is crossed
+            if len(final_response) % THRESH == 0:
+                cut = final_response.rfind(">")
+                if cut != -1:
+                    to_decode = final_response[:cut + 1]
+                    #final_response = final_response[cut + 1:]
+
+                    try:
+                        audio = self._decode_tokens(to_decode)
+                        if audio is not None:
+                            yield audio, 24000
+                    except Exception as e:
+                        logger.exception("Decode failed on intermediate batch: %s", e)
+
+        # Flush whatever is left
+        if final_response:
+            try:
+                audio = self._decode_tokens(final_response)
+                if audio is not None:
+                    yield audio, 24000
+            except Exception as e:
+                logger.exception("Decode failed on final batch: %s", e)
+
+
 
     def _non_streaming_speak(self, text: str, voice: str):
         # One-shot audio generation
@@ -138,6 +189,8 @@ class OrpheusTTS(BaseTTS):
             model_name=self.MODEL_NAME,
             prompt=formatted_prompt,
         )
+
+        #response = "<custom_token_3895><custom_token_7668><custom_token_11727><custom_token_16275><custom_token_18294><custom_token_24193><custom_token_24881><custom_token_1032><custom_token_7326><custom_token_8690><custom_token_12874><custom_token_18453><custom_token_22191><custom_token_27864><custom_token_3566><custom_token_7682><custom_token_10786><custom_token_15157><custom_token_19116><custom_token_22028><custom_token_27938><custom_token_996><custom_token_4285><custom_token_8858><custom_token_12660><custom_token_17103><custom_token_23364><custom_token_25184><custom_token_254><custom_token_5931><custom_token_9445><custom_token_13200><custom_token_16677><custom_token_24172><custom_token_28409><custom_token_3808><custom_token_5405><custom_token_9050><custom_token_13542><custom_token_18413><custom_token_23704><custom_token_26413><custom_token_3808><custom_token_7431><custom_token_10169><custom_token_13057><custom_token_18333><custom_token_21970><custom_token_28036><custom_token_2710><custom_token_5981><custom_token_9599><custom_token_15480><custom_token_18237><custom_token_20876><custom_token_25977><custom_token_3929><custom_token_5949><custom_token_9593><custom_token_12523><custom_token_18079><custom_token_22004><custom_token_27342><custom_token_378><custom_token_7543><custom_token_8427><custom_token_14698><custom_token_16604><custom_token_24254><custom_token_27948><custom_token_2744><custom_token_8064><custom_token_11507><custom_token_12623><custom_token_20373><custom_token_22203><custom_token_25996><custom_token_1736><custom_token_5911><custom_token_10797><custom_token_16319><custom_token_18174><custom_token_23406><custom_token_26661><custom_token_2363>"
         
         if isinstance(response, str):
             response_tokens = response
@@ -152,41 +205,3 @@ class OrpheusTTS(BaseTTS):
             return self._decode_tokens(response_tokens), 24000
         
         return
-
-    def stream(
-        self,
-        text: str,
-        voice: str = "default",
-        temperature: float = 0.8,
-        top_p: float = 0.95,
-        repetition_penalty: float = 1.1,
-        buffer_groups: int = 4,
-        padding_ms: int = 250
-    ):
-        """Yields (sample_rate, audio_chunk) for given input text using Orpheus"""
-        if not text.strip():
-            logger.warning("Empty input text for TTS.")
-            return
-
-        if not self.snac_model:
-            logger.error("SNAC model is not loaded.")
-            raise RuntimeError("SNAC model is not initialized.")
-
-        logger.info(f"Starting TTS streaming for text: {text[:50]}...")
-
-        tts_start = time.time()
-        audio_gen = self.snac_model.generate_speech_stream(
-            text,
-            voice=voice,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-            buffer_groups=buffer_groups,
-            padding_ms=padding_ms
-        )
-
-        for sr, audio_chunk in audio_gen:
-            if audio_chunk is not None and getattr(audio_chunk, 'size', 0) > 0:
-                yield sr, audio_chunk
-
-        logger.info(f"TTS stream completed in {time.time() - tts_start:.2f}s.")

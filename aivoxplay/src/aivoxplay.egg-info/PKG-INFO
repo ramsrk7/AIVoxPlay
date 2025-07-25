@@ -11,3 +11,4 @@ Requires-Dist: soundfile
 Requires-Dist: transformers
 Requires-Dist: openai>=1.97.1
 Requires-Dist: snac>=1.2.1
+Requires-Dist: sounddevice>=0.5.2

@@ -12,6 +12,7 @@ dependencies = [
     "transformers",
     "openai>=1.97.1",
     "snac>=1.2.1",
+    "sounddevice>=0.5.2",
 ]
 
 [build-system]
