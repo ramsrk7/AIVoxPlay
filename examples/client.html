@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Text-to-Speech Streaming</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f9f9f9;
+      color: #333;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      margin-bottom: 1rem;
+      color: #2c3e50;
+    }
+    form {
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 2rem;
+      background-color: #fff;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    textarea {
+      width: 100%;
+      padding: 0.75rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      resize: vertical;
+      margin-bottom: 1rem;
+    }
+    button {
+      background-color: #3498db;
+      color: white;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    audio {
+      width: 100%;
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text-to-Speech Streaming</h1>
+  <form id="promptForm">
+    <label for="promptInput">Enter your prompt below:</label>
+    <textarea id="promptInput" rows="4" placeholder="Type your prompt here..." required></textarea>
+    <button type="submit">Play Audio</button>
+  </form>
+
+  <audio id="audioPlayer" controls autoplay></audio>
+
+  <script>
+    const BASE_URL = "http://localhost:8080"; // 👈 Don't use 0.0.0.0 in browsers
+
+    const audioPlayer = document.getElementById("audioPlayer");
+
+    document.getElementById("promptForm").addEventListener("submit", async function(event) {
+      event.preventDefault();
+      const prompt = document.getElementById("promptInput").value.trim();
+      if (!prompt) return;
+
+      const audioUrl = `${BASE_URL}/tts?prompt=${encodeURIComponent(prompt)}`;
+
+      const requestStart = performance.now();
+      let firstChunkTime = null;
+
+      // Preload audio (sets src and begins buffering)
+      audioPlayer.src = audioUrl;
+      audioPlayer.load();
+
+      // Detect first buffer update
+      audioPlayer.oncanplay = () => {
+        if (!firstChunkTime) {
+          firstChunkTime = performance.now();
+          console.log(`⏱️ Time to first token: ${(firstChunkTime - requestStart).toFixed(2)} ms`);
+        }
+      };
+
+      // Detect when audio finishes playing
+      audioPlayer.onended = () => {
+        const endTime = performance.now();
+        console.log(`✅ Total time (from request to end): ${(endTime - requestStart).toFixed(2)} ms`);
+      };
+
+      try {
+        await audioPlayer.play();
+      } catch (err) {
+        console.error("⚠️ Playback error:", err);
+        alert("Failed to play audio. Please try again.");
+      }
+    });
+  </script>
+</body>
+</html>

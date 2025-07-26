@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 from dotenv import load_dotenv
 load_dotenv()
 from .base import BaseTTS
@@ -6,12 +7,18 @@ import os
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 import time
 import argparse, re, sys
+import queue
 import openai
 from transformers import AutoTokenizer
 from snac import SNAC
 import torch
 import numpy as np
 from typing import Sequence, Union
+from .factory import TokenStreamParser, OrpheusAudioProcessor, dummy_stream_custom_tokens_without_parser
+import threading
+import asyncio
+import random
+
 HF_TOKEN=os.getenv("HF_TOKEN")
 
 
@@ -35,7 +42,8 @@ class OrpheusTTS(BaseTTS):
         self._tok_find_id = 128257           # token_to_find
         self._tok_remove_id = 128258         # token_to_remove
         self._tok_offset = 128266            # offset removed later
-        self._n_layers = 7                   # ORPHEUS_N_LAYERS
+        self._n_layers = 7
+        self.parser = TokenStreamParser()                    # ORPHEUS_N_LAYERS
         
 
     def _build_prompt_input(self, text: str, voice: str = "tara") -> str:
@@ -121,9 +129,53 @@ class OrpheusTTS(BaseTTS):
         if voice not in self.voices:
             voice = voices[0] #Select default voice if invalid
         if stream:
-            return self._streaming_speak(text, voice)
+            return OrpheusAudioProcessor.tokens_decoder_sync(self._streaming_speak_v2(text, voice))
         else:
             return self._non_streaming_speak(text, voice)
+    
+    def _streaming_speak_v2(self, text: str, voice: str):
+        """
+        Stream audio tokens, decode in ~2k-char batches ending with '>', and yield (audio, sr).
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        formatted_prompt = self._build_prompt_input(text, voice)
+
+        stream = OrpheusTTS.call_completions_endpoint_stream(
+            endpoint=self.endpoint,
+            api_key=self.api_key,
+            model_name=self.MODEL_NAME,
+            prompt=formatted_prompt,
+        )
+        #stream = dummy_stream_custom_tokens_without_parser(TEST_AUDIO_TOKENS)
+        token_queue = queue.Queue()
+
+        async def async_producer():
+            for chunk in stream:
+                # Place each token text into the queue.
+                self.parser.feed(chunk)
+                tokens = self.parser.get_tokens()
+                if tokens:
+                    #encoded_tokens = [vox_tts.tokenizer.encode(token, add_special_tokens=False, return_tensors=None)[0] for token in tokens]
+                    for token in tokens:
+                        token_queue.put(token)
+            token_queue.put(None)  
+
+        def run_async():
+            asyncio.run(async_producer())
+
+        thread = threading.Thread(target=run_async)
+        thread.start()
+
+        while True:
+            token = token_queue.get()
+            if token is None:
+                break
+            yield token
+
+        thread.join()
+        
 
 
     def _streaming_speak(self, text: str, voice: str):
