@@ -124,11 +124,47 @@ class OrpheusTTS(BaseTTS):
             print("\nCould not generate audio, no codes to process.")
             return
 
-    def speak(self, text: str, voice: str = "tara", stream: bool = False):
+    def _stream_paragraphs_in_order(self, paragraphs, voice, max_workers=2):
+        qs = [queue.Queue() for _ in paragraphs]
+        workers = []
+
+        def work(i, para):
+            token_gen = self._streaming_speak_v2(para, voice)
+            for chunk in OrpheusAudioProcessor.tokens_decoder_sync(token_gen):
+                qs[i].put(chunk)
+            qs[i].put(None)
+
+        # start workers (concurrency cap)
+        sem = threading.BoundedSemaphore(max_workers)
+        def guarded_work(i, para):
+            with sem:
+                work(i, para)
+
+        for i, para in enumerate(paragraphs):
+            print(f"{i}, {para}")
+            t = threading.Thread(target=guarded_work, args=(i, para), daemon=True)
+            t.start()
+            workers.append(t)
+
+        # yield in paragraph order
+        for q in qs:
+            while True:
+                b = q.get()
+                if b is None: break
+                yield b
+
+        for t in workers:
+            t.join()
+
+
+    def speak(self, text: str, voice: str = "tara", stream: bool = False, batch: bool = False):
 
         if voice not in self.voices:
             voice = voices[0] #Select default voice if invalid
-        if stream:
+        if stream and batch:
+            paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+            return self._stream_paragraphs_in_order(paragraphs, voice)
+        elif stream:
             return OrpheusAudioProcessor.tokens_decoder_sync(self._streaming_speak_v2(text, voice))
         else:
             return self._non_streaming_speak(text, voice)

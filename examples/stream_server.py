@@ -8,7 +8,7 @@ from aivoxplay.tts.orpheus import OrpheusTTS
 
 
 # Initialize TTS model with streaming enabled
-tts_engine = OrpheusTTS(endpoint="https://b9yzo99l0z7cgu-8000.proxy.runpod.net/v1")
+tts_engine = OrpheusTTS(endpoint="https://pkjoqg04k2hhgf-8000.proxy.runpod.net/v1")
 
 app = FastAPI()
 
@@ -42,7 +42,8 @@ def stream_audio_from_text(prompt_text: str) -> Generator[bytes, None, None]:
     stream = tts_engine.speak(
         text=prompt_text,
         voice="tara",
-        stream=True
+        stream=True,
+        batch=True
     )
 
     for audio_chunk in stream:

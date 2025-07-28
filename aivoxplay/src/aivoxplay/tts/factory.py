@@ -25,8 +25,54 @@ import queue
 import os
 
 model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-snac_device = os.environ.get("SNAC_DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+# Respect the environment variable if set; otherwise fallback to mps -> cuda -> cpu
+snac_device = torch.device(
+    os.environ.get("SNAC_DEVICE") or
+    ("mps" if torch.backends.mps.is_available() else
+     "cuda" if torch.cuda.is_available() else
+     "cpu")
+)
+
 model = model.to(snac_device)
+
+# ---- one shared event loop for all async decoding ----
+class _AsyncLoopRunner:
+    _loop = None
+    _thread = None
+
+    @classmethod
+    def start(cls):
+        if cls._loop is None:
+            import asyncio, threading
+            cls._loop = asyncio.new_event_loop()
+            cls._thread = threading.Thread(
+                target=cls._loop.run_forever, name="audio-decode-loop", daemon=True
+            )
+            cls._thread.start()
+
+    @classmethod
+    def submit(cls, coro):
+        cls.start()
+        import asyncio
+        # schedule coroutine on the shared loop from any thread
+        return asyncio.run_coroutine_threadsafe(coro, cls._loop)
+
+# Optional: lock to serialize non-threadsafe model calls if needed
+_decode_lock = threading.Lock()
+
+def _ensure_pcm16le_bytes(chunk, expect_sr=24000):
+    import numpy as np
+    if isinstance(chunk, (bytes, bytearray)):
+        return bytes(chunk)
+    if isinstance(chunk, np.ndarray):
+        # Accept float32/float64 or int16 arrays and convert to little-endian int16 bytes
+        if chunk.dtype.kind == 'f':
+            chunk = np.clip(chunk, -1.0, 1.0)
+            chunk = (chunk * 32767.0).astype('<i2', copy=False)
+        elif chunk.dtype != np.dtype('<i2'):
+            chunk = chunk.astype('<i2', copy=False)
+        return chunk.tobytes()
+    raise TypeError(f"Unsupported audio chunk type: {type(chunk)}")
 
 
 class TokenStreamParser:
@@ -157,27 +203,22 @@ class OrpheusAudioProcessor:
     # ------------------ Synchronous Tokens Decoder Wrapper ------------------ #
     @staticmethod
     def tokens_decoder_sync(syn_token_gen):
-
-
         audio_queue = queue.Queue()
 
-        # Convert the synchronous token generator into an async generator.
         async def async_token_gen():
             for token in syn_token_gen:
                 yield token
 
         async def async_producer():
-            # tokens_decoder.tokens_decoder is assumed to be an async generator that processes tokens.
+            # NOTE: ensure tokens_decoder creates fresh per-call state (see note below)
             async for audio_chunk in OrpheusAudioProcessor.tokens_decoder(async_token_gen()):
-                audio_queue.put(audio_chunk)
-            audio_queue.put(None)  # Sentinel
+                # If the underlying SNAC/model call is not threadsafe, uncomment the lock:
+                # with _decode_lock:
+                pcm = _ensure_pcm16le_bytes(audio_chunk)
+                audio_queue.put(pcm)
+            audio_queue.put(None)  # sentinel
 
-        
-        def run_async():
-            asyncio.run(async_producer())
-
-        thread = threading.Thread(target=run_async)
-        thread.start()
+        fut = _AsyncLoopRunner.submit(async_producer())
 
         while True:
             audio = audio_queue.get()
@@ -185,7 +226,9 @@ class OrpheusAudioProcessor:
                 break
             yield audio
 
-        thread.join()
+        # surface exceptions if any
+        fut.result()
+
 
 
 def dummy_stream_custom_tokens_without_parser(full_token_string: str):
