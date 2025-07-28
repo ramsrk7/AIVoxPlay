@@ -23,6 +23,10 @@ import asyncio
 import threading
 import queue
 import os
+import queue as _q
+import inspect
+
+_decode_lock = threading.Lock()
 
 model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
 # Respect the environment variable if set; otherwise fallback to mps -> cuda -> cpu
@@ -202,17 +206,33 @@ class OrpheusAudioProcessor:
 
     # ------------------ Synchronous Tokens Decoder Wrapper ------------------ #
     @staticmethod
-    def tokens_decoder_sync(syn_token_gen):
-        audio_queue = queue.Queue()
+    def tokens_decoder_sync(speak_result):
+        """
+        Accepts:
+        - a SYNC token generator
+        - an ASYNC token generator
+        - a coroutine that returns either of the above
+        and yields PCM16LE bytes.
+        """
+        audio_queue = _q.Queue()
 
-        async def async_token_gen():
-            for token in syn_token_gen:
-                yield token
+        async def _to_async_gen(sr):
+            # Normalize anything -> async generator of tokens
+            if inspect.isasyncgen(sr):
+                async for t in sr:
+                    yield t
+            elif inspect.iscoroutine(sr):
+                r = await sr
+                async for t in _to_async_gen(r):
+                    yield t
+            else:
+                # assume sync iterable
+                for t in sr:
+                    yield t
 
         async def async_producer():
-            # NOTE: ensure tokens_decoder creates fresh per-call state (see note below)
-            async for audio_chunk in OrpheusAudioProcessor.tokens_decoder(async_token_gen()):
-                # If the underlying SNAC/model call is not threadsafe, uncomment the lock:
+            async for audio_chunk in OrpheusAudioProcessor.tokens_decoder(_to_async_gen(speak_result)):
+                # If decode isn’t thread-safe, uncomment:
                 # with _decode_lock:
                 pcm = _ensure_pcm16le_bytes(audio_chunk)
                 audio_queue.put(pcm)
@@ -221,12 +241,19 @@ class OrpheusAudioProcessor:
         fut = _AsyncLoopRunner.submit(async_producer())
 
         while True:
-            audio = audio_queue.get()
+            try:
+                audio = audio_queue.get(timeout=0.2)  # periodically check fut
+            except _q.Empty:
+                if fut.done():
+                    # Raises if producer crashed; prevents silent hang
+                    fut.result()
+                continue
+
             if audio is None:
                 break
             yield audio
 
-        # surface exceptions if any
+        # Propagate any late exceptions
         fut.result()
 
 
@@ -265,3 +292,14 @@ def dummy_stream_custom_tokens_without_parser(full_token_string: str):
             yield ''.join(chunk)   # Yield parsed tokens as list
 
         time.sleep(0.05)  # Simulate delay
+def pcm16le_normalizer(chunk):
+    if isinstance(chunk, (bytes, bytearray)):
+        return bytes(chunk)
+    if isinstance(chunk, np.ndarray):
+        if chunk.dtype.kind == 'f':
+            chunk = np.clip(chunk, -1.0, 1.0)
+            chunk = (chunk * 32767.0).astype('<i2', copy=False)
+        elif chunk.dtype != np.dtype('<i2'):
+            chunk = chunk.astype('<i2', copy=False)
+        return chunk.tobytes()
+    return bytes(chunk)

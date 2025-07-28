@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Text-to-Speech Streaming</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f9f9f9;
+      color: #333;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      margin-bottom: 1rem;
+      color: #2c3e50;
+    }
+    form, .actions {
+      width: 100%;
+      max-width: 600px;
+      background-color: #fff;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      margin-bottom: 2rem;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    textarea {
+      width: 100%;
+      padding: 0.75rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      resize: vertical;
+      margin-bottom: 1rem;
+    }
+    button {
+      background-color: #3498db;
+      color: white;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 0.5rem;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    audio {
+      width: 100%;
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Text-to-Speech Streaming</h1>
+
+  <form id="promptForm">
+    <label for="promptInput">Enter your prompt below:</label>
+    <textarea id="promptInput" rows="4" placeholder="Type your prompt here..." required></textarea>
+    <div>
+      <button type="button" onclick="addToQueue()">Add to Queue</button>
+      <button type="button" onclick="playAudio()">Play Audio</button>
+    </div>
+  </form>
+
+  <div class="actions">
+    <button onclick="clearQueue()">Clear Queue</button>
+    <button onclick="cancelJobs()">Cancel Jobs</button>
+  </div>
+
+  <audio id="audioPlayer" controls autoplay></audio>
+
+  <script>
+    const BASE_URL = "http://localhost:8080";
+    const audioPlayer = document.getElementById("audioPlayer");
+
+    async function addToQueue() {
+      const prompt = document.getElementById("promptInput").value.trim();
+      if (!prompt) return alert("Please enter a prompt first.");
+      try {
+        const res = await fetch(`${BASE_URL}/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: prompt })
+        });
+        if (res.ok) alert("✅ Prompt added to queue!");
+        else alert("❌ Failed to add.");
+      } catch (err) {
+        console.error(err);
+        alert("🚫 Error adding to queue.");
+      }
+    }
+
+    async function playAudio() {
+      const audioUrl = `${BASE_URL}/play`;
+      const requestStart = performance.now();
+      let firstChunkTime = null;
+
+      audioPlayer.src = audioUrl;
+      audioPlayer.load();
+
+      audioPlayer.oncanplay = () => {
+        if (!firstChunkTime) {
+          firstChunkTime = performance.now();
+          console.log(`⏱️ Time to first chunk: ${(firstChunkTime - requestStart).toFixed(2)} ms`);
+        }
+      };
+
+      audioPlayer.onended = () => {
+        const endTime = performance.now();
+        console.log(`✅ Total time: ${(endTime - requestStart).toFixed(2)} ms`);
+      };
+
+      try {
+        await audioPlayer.play();
+      } catch (err) {
+        console.error("⚠️ Playback error:", err);
+        alert("Failed to play audio.");
+      }
+    }
+
+    async function clearQueue() {
+      try {
+        await fetch(`${BASE_URL}/clear`, { method: "POST" });
+        alert("🧹 Cleared the queue.");
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function cancelJobs() {
+      try {
+        await fetch(`${BASE_URL}/cancel`, { method: "POST" });
+        alert("⛔ Cancelled running jobs.");
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  </script>
+</body>
+</html>
