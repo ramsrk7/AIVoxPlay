@@ -1,3 +1,4 @@
 examples/vllm_client.py
+examples/client_stt_openai.html
 .env
 *__pycache__*

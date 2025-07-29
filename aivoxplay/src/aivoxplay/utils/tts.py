@@ -13,7 +13,6 @@ def save_audio(tokens, file_path, sr=24000):
     sf.write(file_path, tokens, sr)
 
 
-
 def save_audio_stream(audio_chunks, file_path, sr=24000):
     """
     Save chunks of PCM audio data as a valid WAV file.

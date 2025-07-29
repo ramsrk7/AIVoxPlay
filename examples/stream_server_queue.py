@@ -9,7 +9,7 @@ from aivoxplay.tts.orpheus import OrpheusTTS
 from aivoxplay.utils.tts import QueueSession
 
 # Initialize TTS model with streaming enabled
-tts_engine = OrpheusTTS(endpoint="https://85pp1s2n3yyafa-8000.proxy.runpod.net/v1")
+tts_engine = OrpheusTTS(endpoint="https://6isojpjg84ev41-8000.proxy.runpod.net/v1")
 app = FastAPI()
 # Enable CORS
 app.add_middleware(
