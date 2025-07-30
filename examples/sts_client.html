@@ -3,158 +3,196 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Echo with Interrupt</title>
+  <title>Realtime STT + TTS Test Client</title>
   <style>
-    /* Global styles */
     body {
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
+      justify-content: flex-start;
+      padding: 2rem;
+      font-family: sans-serif;
       background: #f0f2f5;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       color: #333;
     }
-
-    button {
-      background-color: #4CAF50;
-      border: none;
-      border-radius: 4px;
-      color: white;
-      padding: 12px 24px;
-      text-align: center;
-      text-decoration: none;
-      display: inline-block;
-      font-size: 16px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-      margin-bottom: 16px;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-
-    audio {
-      width: 300px;
-      margin-top: 16px;
-    }
-
-    /* Indicator circle */
     #indicator {
       width: 40px;
       height: 40px;
       border-radius: 50%;
       background-color: #4CAF50;
-      margin-bottom: 24px;
-      /* Default paused */
+      margin-bottom: 1rem;
       animation: bounce 0.4s infinite alternate paused;
     }
-
-    /* Bouncing when listening */
-    .listening {
-      animation-play-state: running;
+    .listening { animation-play-state: running; }
+    .playing   { animation: pulse 1s infinite; }
+    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-20px); } }
+    @keyframes pulse  { 0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } }
+    button {
+      padding: 0.5rem 1rem;
+      margin: 0.5rem;
+      font-size: 1rem;
+      border: none;
+      background: #4CAF50;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
     }
-
-    @keyframes bounce {
-      from { transform: translateY(0); }
-      to   { transform: translateY(-20px); }
+    button:disabled { background: #888; cursor: not-allowed; }
+    #transcript {
+      margin-top: 1rem;
+      font-size: 1.1rem;
+      width: 100%;
+      max-width: 600px;
+      height: 150px;
+      overflow-y: auto;
+      background: white;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      white-space: pre-wrap;
     }
-
-    /* Pulsing when playing */
-    .playing {
-      animation: pulse 1s infinite;
-    }
-
-    @keyframes pulse {
-      0%   { transform: scale(1); }
-      50%  { transform: scale(1.3); }
-      100% { transform: scale(1); }
+    audio {
+      margin-top: 1rem;
+      width: 100%;
+      max-width: 600px;
     }
   </style>
 </head>
 <body>
   <div id="indicator"></div>
-  <button id="start">Start Echo</button>
+  <div>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+  <div id="transcript">Transcript will appear here...</div>
   <audio id="player" controls></audio>
 
   <script>
     const WS_URL = "ws://localhost:8001/ws/realtime";
-    let ws, audioCtx, micStream, source, processor;
-    let listening = true, playing = false;
-    let micBuffer = [], chunks = [];
+
+    let ws;
+    let audioCtx, source, processor;
+    let listening = false;
+    let playing   = false;
+    let micBuffer = [];
+    let chunks    = [];
     const VAD_THRESH = 0.02;
-
     const indicator = document.getElementById('indicator');
+    const transcriptDiv = document.getElementById('transcript');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn  = document.getElementById('stopBtn');
+    const player   = document.getElementById('player');
 
-    document.getElementById("start").onclick = () => {
-      if (ws) return;
-      ws = new WebSocket(WS_URL);
-      ws.binaryType = "arraybuffer";
-      ws.onopen    = initMic;
-      ws.onmessage = onWSMessage;
+    startBtn.onclick = () => {
+      startBtn.disabled = true;
+      stopBtn.disabled  = false;
+      initWebSocket();
     };
 
-    function initMic() {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(strm => {
-          audioCtx   = new AudioContext();
-          micStream  = strm;
-          source     = audioCtx.createMediaStreamSource(strm);
-          processor  = audioCtx.createScriptProcessor(4096,1,1);
+    stopBtn.onclick = () => {
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+      cleanup();
+    };
 
-          source.connect(processor);
-          processor.connect(audioCtx.destination);
-          processor.onaudioprocess = e => {
-            const data = e.inputBuffer.getChannelData(0);
-            let sum = 0;
-            for (let x of data) sum += x*x;
-            const rms = Math.sqrt(sum / data.length);
-
-            // Toggle bouncing
-            if (rms > VAD_THRESH && listening) {
-              indicator.classList.add('listening');
-            } else {
-              indicator.classList.remove('listening');
-            }
-
-            const pcm = new Int16Array(data.length);
-            for (let i=0;i<data.length;i++){
-              let s = Math.max(-1,Math.min(1,data[i]));
-              pcm[i] = s<0? s*0x8000 : s*0x7FFF;
-            }
-
-            if (listening) {
-              ws.send(pcm.buffer);
-            } else {
-              micBuffer.push(pcm.buffer);
-            }
-
-            if (playing && rms > VAD_THRESH) {
-              ws.send(JSON.stringify({type:"cancel_audio"}));
-              playing = false;
-              listening = true;
-              for (let b of micBuffer) ws.send(b);
-              micBuffer = [];
-            }
-          };
-        })
-        .catch(console.error);
+    function initWebSocket() {
+      ws = new WebSocket(WS_URL);
+      ws.binaryType = 'arraybuffer';
+      ws.onopen    = onWsOpen;
+      ws.onmessage = onWsMessage;
+      ws.onerror   = e => console.error('WebSocket error', e);
+      ws.onclose   = ev => console.log('WebSocket closed', ev.code, ev.reason);
     }
 
-    function onWSMessage(evt) {
-      if (typeof evt.data === "string") {
+    function onWsOpen() {
+      console.log('WebSocket opened');
+      listening = true;
+      audioCtx = new AudioContext({ sampleRate: 16000 });
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          source    = audioCtx.createMediaStreamSource(stream);
+          processor = audioCtx.createScriptProcessor(4096, 1, 1);
+          source.connect(processor);
+          processor.connect(audioCtx.destination);
+          processor.onaudioprocess = handleAudioProcess;
+        })
+        .catch(err => console.error('getUserMedia error', err));
+    }
+
+    function handleAudioProcess(e) {
+      const data = e.inputBuffer.getChannelData(0);
+      const rms = Math.sqrt(data.reduce((sum, v) => sum + v*v, 0) / data.length);
+      // VAD indicator
+      if (rms > VAD_THRESH && listening) {
+        indicator.classList.add('listening');
+      } else {
+        indicator.classList.remove('listening');
+      }
+
+      // convert to Int16
+      const pcm16 = new Int16Array(data.length);
+      for (let i = 0; i < data.length; i++) {
+        const s = Math.max(-1, Math.min(1, data[i]));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+
+      // send or buffer
+      if (listening) {
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+        ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
+      } else {
+        micBuffer.push(pcm16.buffer);
+      }
+
+      // cancel TTS if speaking
+      if (playing && rms > VAD_THRESH) {
+        // stop playback immediately
+        if (!player.paused) {
+          player.pause();
+          player.currentTime = 0;
+        }
+        // notify server to cancel TTS stream
+        ws.send(JSON.stringify({ type: 'cancel_audio' }));
+        // reset flags & indicator
+        playing = false;
+        listening = true;
+        indicator.classList.remove('playing');
+        indicator.classList.add('listening');
+        // flush buffered mic audio
+        micBuffer.forEach(buf => {
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+          ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
+        });
+        micBuffer = [];
+        chunks = [];
+      }
+    }
+
+    function onWsMessage(evt) {
+      if (typeof evt.data === 'string') {
         const msg = JSON.parse(evt.data);
-        if (msg.type === "audio.complete") {
-          playing = true;
+        if (msg.type === 'transcript') {
+          transcriptDiv.textContent += msg.text + '\n';
+          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+        }
+        if (msg.type === 'audio.complete') {
+          playing   = true;
           listening = false;
           indicator.classList.remove('listening');
           indicator.classList.add('playing');
           playBack();
         }
-        if (msg.type === "audio.cancelled") {
+        if (msg.type === 'audio.cancelled') {
+          // server cancelled TTS
+          playing = false;
+          if (!player.paused) {
+            player.pause();
+            player.currentTime = 0;
+          }
           chunks = [];
+          listening = true;
+          indicator.classList.remove('playing');
+          indicator.classList.add('listening');
         }
       } else {
         chunks.push(evt.data);
@@ -162,19 +200,33 @@
     }
 
     function playBack() {
-      const blob   = new Blob(chunks, {type:"audio/wav"});
-      const url    = URL.createObjectURL(blob);
-      const player = document.getElementById("player");
-      player.src    = url;
+      const blob = new Blob(chunks, { type: 'audio/wav' });
+      const url  = URL.createObjectURL(blob);
+      player.src = url;
       player.play();
       player.onended = () => {
         chunks = [];
         playing = false;
         listening = true;
         indicator.classList.remove('playing');
-        for (let b of micBuffer) ws.send(b);
+        micBuffer.forEach(buf => {
+          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+          ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
+        });
         micBuffer = [];
       };
+    }
+
+    function cleanup() {
+      if (processor) processor.disconnect();
+      if (source) source.disconnect();
+      if (audioCtx) audioCtx.close();
+      if (ws) ws.close();
+      listening = false;
+      playing = false;
+      indicator.classList.remove('listening', 'playing');
+      chunks = [];
+      micBuffer = [];
     }
   </script>
 </body>
