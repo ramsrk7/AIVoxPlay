@@ -1,4 +1,4 @@
-# realtime_stt_client.py
+# core.py
 import asyncio
 import sounddevice as sd
 import numpy as np

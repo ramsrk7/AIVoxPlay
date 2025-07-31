@@ -1,233 +1,274 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Realtime STT + TTS Test Client</title>
-  <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding: 2rem;
-      font-family: sans-serif;
-      background: #f0f2f5;
-      color: #333;
-    }
-    #indicator {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background-color: #4CAF50;
-      margin-bottom: 1rem;
-      animation: bounce 0.4s infinite alternate paused;
-    }
-    .listening { animation-play-state: running; }
-    .playing   { animation: pulse 1s infinite; }
-    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-20px); } }
-    @keyframes pulse  { 0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } }
-    button {
-      padding: 0.5rem 1rem;
-      margin: 0.5rem;
-      font-size: 1rem;
-      border: none;
-      background: #4CAF50;
-      color: white;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:disabled { background: #888; cursor: not-allowed; }
-    #transcript {
-      margin-top: 1rem;
-      font-size: 1.1rem;
-      width: 100%;
-      max-width: 600px;
-      height: 150px;
-      overflow-y: auto;
-      background: white;
-      padding: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      white-space: pre-wrap;
-    }
-    audio {
-      margin-top: 1rem;
-      width: 100%;
-      max-width: 600px;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Realtime Voice Agent</title>
+
+<!--  ――  DESIGN ――――――――――――――――――――――――――――――――――― -->
+<style>
+  :root {
+    --clr-accent : #22c55e;            /* green while listening  */
+    --clr-play   : #7c3aed;            /* purple while playing   */
+    --clr-play2  : #c084fc;            /* lighter pulse purple    */
+    --clr-bg     : #f5f7fa;
+    --clr-card   : #ffffff;
+    --radius     : 14px;
+    --shadow     : 0 8px 20px rgba(0,0,0,.08);
+    --font-main  : 'Inter', system-ui, sans-serif;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    min-height:100vh;
+    display:flex; flex-direction:column; align-items:center;
+    padding:2.5rem 1rem; background:var(--clr-bg);
+    font-family:var(--font-main); color:#333;
+  }
+
+  /* ---------- INDICATOR ---------- */
+  #indicator{
+    width:90px; height:90px; border-radius:50%;
+    background:var(--clr-accent); box-shadow:0 0 0 0 var(--clr-accent);
+    margin-bottom:1.5rem; transition:background .3s;
+  }
+  .listening{
+    animation:bounce .5s infinite alternate,
+              glow-listen 1s infinite;
+  }
+  .playing{
+    animation:pulse-size 1.2s infinite ease-in-out,
+              glow-play   1.2s infinite ease-in-out,
+              pulse-color 1.2s infinite ease-in-out;
+  }
+
+  /* keyframes */
+  @keyframes bounce       { to   { transform:translateY(-28px);} }
+  @keyframes pulse-size   { 0%,100%{transform:scale(1);} 50%{transform:scale(1.2);} }
+  @keyframes pulse-color  { 0%,100%{background:var(--clr-play);}
+                            50%    {background:var(--clr-play2);} }
+  @keyframes glow-listen  { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.7);}
+                            100%{box-shadow:0 0 16px 12px rgba(34,197,94,0);} }
+  @keyframes glow-play    { 0%{box-shadow:0 0 0 0 rgba(124,58,237,.7);}
+                            100%{box-shadow:0 0 16px 12px rgba(124,58,237,0);} }
+
+  /* ---------- BUTTONS ---------- */
+  .btn{
+    padding:.75rem 1.5rem; margin:.5rem; font-size:1rem; font-weight:600;
+    border:none; border-radius:var(--radius); background:var(--clr-accent);
+    color:#fff; cursor:pointer; transition:transform .15s, background .25s;
+    box-shadow:var(--shadow);
+  }
+  .btn:disabled{ background:#c4c4c4; cursor:not-allowed; box-shadow:none; }
+  .btn:not(:disabled):hover{ transform:translateY(-2px); }
+
+  /* ---------- TRANSCRIPT ---------- */
+  #transcript-card{
+    margin-top:2rem; width:100%; max-width:680px;
+    background:var(--clr-card); border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:1rem 1.25rem; overflow-y:auto; height:220px;
+  }
+  #transcript-list{ list-style:none; margin:0; padding:0; }
+  #transcript-list li{
+    padding:.4rem 0; border-bottom:1px solid #ececec;
+    font-size:1.05rem; line-height:1.4;
+  }
+  #transcript-list li:last-child{ border-bottom:none; }
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="indicator"></div>
-  <div>
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" disabled>Stop</button>
-  </div>
-  <div id="transcript">Transcript will appear here...</div>
-  <audio id="player" controls></audio>
 
-  <script>
-    const WS_URL = "ws://localhost:8001/ws/realtime";
+<div id="indicator"></div>
 
-    let ws;
-    let audioCtx, source, processor;
-    let listening = false;
-    let playing   = false;
-    let micBuffer = [];
-    let chunks    = [];
-    const VAD_THRESH = 0.02;
-    const indicator = document.getElementById('indicator');
-    const transcriptDiv = document.getElementById('transcript');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn  = document.getElementById('stopBtn');
-    const player   = document.getElementById('player');
+<div>
+  <button id="startBtn" class="btn">Start</button>
+  <button id="stopBtn"  class="btn" disabled>Stop</button>
+</div>
 
-    startBtn.onclick = () => {
-      startBtn.disabled = true;
-      stopBtn.disabled  = false;
-      initWebSocket();
-    };
+<div id="transcript-card">
+  <ul id="transcript-list">
+    <li style="opacity:.6">Transcript will appear here…</li>
+  </ul>
+</div>
 
-    stopBtn.onclick = () => {
-      stopBtn.disabled = true;
-      startBtn.disabled = false;
-      cleanup();
-    };
+<!--  ――  LOGIC ――――――――――――――――――――――――――――――――――― -->
+<script>
+/* CONFIG */
+const WS_URL     = "ws://localhost:8001/voice";
+const SR         = 24_000;          // sample-rate of server PCM
+const VAD_THRESH = 0.02;
 
-    function initWebSocket() {
-      ws = new WebSocket(WS_URL);
-      ws.binaryType = 'arraybuffer';
-      ws.onopen    = onWsOpen;
-      ws.onmessage = onWsMessage;
-      ws.onerror   = e => console.error('WebSocket error', e);
-      ws.onclose   = ev => console.log('WebSocket closed', ev.code, ev.reason);
+/* DOM refs */
+const indicator = document.getElementById('indicator');
+const startBtn  = document.getElementById('startBtn');
+const stopBtn   = document.getElementById('stopBtn');
+const transcriptList = document.getElementById('transcript-list');
+
+/* State */
+let ws, audioCtx, source, processor;
+let listening  = false, playing = false;
+let playCursor = 0;
+let micBuffer  = [];                 // queued mic chunks while TTS plays
+let activeSources = [];              // currently scheduled Web-Audio buffers
+
+/* ---------- BUTTONS ---------- */
+startBtn.onclick = ()=>{ startBtn.disabled=true; stopBtn.disabled=false; init(); };
+stopBtn.onclick  = ()=>{ stopBtn.disabled=true;  startBtn.disabled=false; cleanup(); };
+
+/* ---------- SOCKET ---------- */
+function init(){
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+  ws.onopen    = onWsOpen;
+  ws.onmessage = onWsMessage;
+  ws.onerror   = e  => console.error("WebSocket error:", e);
+  ws.onclose   = ev => console.log("WebSocket closed:", ev.code, ev.reason);
+}
+
+function onWsOpen(){
+  listening = true;
+  audioCtx  = new AudioContext({ sampleRate: SR });
+
+  navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
+    source    = audioCtx.createMediaStreamSource(stream);
+    processor = audioCtx.createScriptProcessor(4096,1,1);
+    source.connect(processor); processor.connect(audioCtx.destination);
+    processor.onaudioprocess = handleMic;
+  }).catch(err=>console.error("getUserMedia error:", err));
+}
+
+/* ---------- MICROPHONE ---------- */
+function handleMic(e){
+  const data = e.inputBuffer.getChannelData(0);
+  const rms  = Math.sqrt(data.reduce((s,v)=>s+v*v, 0) / data.length);
+
+  // indicator
+  if(rms > VAD_THRESH && listening) indicator.classList.add("listening");
+  else                              indicator.classList.remove("listening");
+
+  // float32 → int16
+  const pcm16 = new Int16Array(data.length);
+  for(let i=0;i<data.length;i++){
+    const s = Math.max(-1, Math.min(1, data[i]));
+    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+
+  /*  ✱✱✱  USER STARTS TALKING WHILE AUDIO PLAYING  ✱✱✱ */
+  if(playing && rms > VAD_THRESH){
+    cancelPlayback();                   // stop Web-Audio buffers
+    ws.send(JSON.stringify({ type:"cancel_audio" }));  // notify server
+
+    playing   = false;
+    listening = true;
+    indicator.classList.remove("playing");
+    indicator.classList.add("listening");
+
+    // flush buffered mic data so STT doesn’t lose first syllables
+    micBuffer.forEach(buf=>{
+      ws.send(JSON.stringify({ type:"input_audio_buffer.append",
+                               audio:btoa(String.fromCharCode(...new Uint8Array(buf))) }));
+    });
+    micBuffer.length = 0;
+  }
+
+  // send or buffer
+  if(listening){
+    ws.send(JSON.stringify({ type:"input_audio_buffer.append",
+                             audio:btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer))) }));
+  }else{
+    micBuffer.push(pcm16.buffer);
+  }
+}
+
+/* ---------- SERVER MESSAGES ---------- */
+function onWsMessage(evt){
+  if(typeof evt.data === "string"){
+    const msg = JSON.parse(evt.data);
+
+    if(msg.type === "transcript") addTranscript(msg.text);
+
+    if(msg.type === "audio.cancelled"){
+      cancelPlayback();
+      playing=false; listening=true; indicator.classList.remove("playing");
     }
 
-    function onWsOpen() {
-      console.log('WebSocket opened');
-      listening = true;
-      audioCtx = new AudioContext({ sampleRate: 16000 });
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-          source    = audioCtx.createMediaStreamSource(stream);
-          processor = audioCtx.createScriptProcessor(4096, 1, 1);
-          source.connect(processor);
-          processor.connect(audioCtx.destination);
-          processor.onaudioprocess = handleAudioProcess;
-        })
-        .catch(err => console.error('getUserMedia error', err));
+    if(msg.type === "audio.complete"){
+      playing=false; listening=true; indicator.classList.remove("playing");
     }
+    return;
+  }
 
-    function handleAudioProcess(e) {
-      const data = e.inputBuffer.getChannelData(0);
-      const rms = Math.sqrt(data.reduce((sum, v) => sum + v*v, 0) / data.length);
-      // VAD indicator
-      if (rms > VAD_THRESH && listening) {
-        indicator.classList.add('listening');
-      } else {
-        indicator.classList.remove('listening');
-      }
+  // binary PCM chunk
+  if(!playing){
+    playing   = true;
+    listening = false;
+    indicator.classList.remove("listening");
+    indicator.classList.add("playing");
+  }
+  playPcmInt16(evt.data);
+}
 
-      // convert to Int16
-      const pcm16 = new Int16Array(data.length);
-      for (let i = 0; i < data.length; i++) {
-        const s = Math.max(-1, Math.min(1, data[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
+/* ---------- TRANSCRIPT ---------- */
+function addTranscript(text){
+  if(transcriptList.firstElementChild?.style.opacity) transcriptList.innerHTML="";
+  const li = document.createElement("li");
+  li.textContent = text;
+  transcriptList.appendChild(li);
+  transcriptList.scrollTop = transcriptList.scrollHeight;
+}
 
-      // send or buffer
-      if (listening) {
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-        ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
-      } else {
-        micBuffer.push(pcm16.buffer);
-      }
+/* ---------- PLAYBACK utils ---------- */
+function playPcmInt16(buf) {
+  const i16 = new Int16Array(buf);
+  const f32 = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
 
-      // cancel TTS if speaking
-      if (playing && rms > VAD_THRESH) {
-        // stop playback immediately
-        if (!player.paused) {
-          player.pause();
-          player.currentTime = 0;
-        }
-        // notify server to cancel TTS stream
-        ws.send(JSON.stringify({ type: 'cancel_audio' }));
-        // reset flags & indicator
-        playing = false;
-        listening = true;
-        indicator.classList.remove('playing');
-        indicator.classList.add('listening');
-        // flush buffered mic audio
-        micBuffer.forEach(buf => {
-          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-          ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
-        });
-        micBuffer = [];
-        chunks = [];
-      }
-    }
+  const audioBuffer = audioCtx.createBuffer(1, f32.length, SR);
+  audioBuffer.getChannelData(0).set(f32);
 
-    function onWsMessage(evt) {
-      if (typeof evt.data === 'string') {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === 'transcript') {
-          transcriptDiv.textContent += msg.text + '\n';
-          transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
-        }
-        if (msg.type === 'audio.complete') {
-          playing   = true;
-          listening = false;
-          indicator.classList.remove('listening');
-          indicator.classList.add('playing');
-          playBack();
-        }
-        if (msg.type === 'audio.cancelled') {
-          // server cancelled TTS
-          playing = false;
-          if (!player.paused) {
-            player.pause();
-            player.currentTime = 0;
-          }
-          chunks = [];
-          listening = true;
-          indicator.classList.remove('playing');
-          indicator.classList.add('listening');
-        }
-      } else {
-        chunks.push(evt.data);
-      }
-    }
+  // GainNode for fade-in
+  const src  = audioCtx.createBufferSource();
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0;                          // start muted
+  src.buffer = audioBuffer;
+  src.connect(gain).connect(audioCtx.destination);
 
-    function playBack() {
-      const blob = new Blob(chunks, { type: 'audio/wav' });
-      const url  = URL.createObjectURL(blob);
-      player.src = url;
-      player.play();
-      player.onended = () => {
-        chunks = [];
-        playing = false;
-        listening = true;
-        indicator.classList.remove('playing');
-        micBuffer.forEach(buf => {
-          const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-          ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
-        });
-        micBuffer = [];
-      };
-    }
+  const startAt   = Math.max(playCursor, audioCtx.currentTime + 0.01);
+  const fadeTime  = 0.005;                      // 5 ms fade
+  gain.gain.setValueAtTime(0, startAt);
+  gain.gain.linearRampToValueAtTime(1, startAt + fadeTime);
 
-    function cleanup() {
-      if (processor) processor.disconnect();
-      if (source) source.disconnect();
-      if (audioCtx) audioCtx.close();
-      if (ws) ws.close();
-      listening = false;
-      playing = false;
-      indicator.classList.remove('listening', 'playing');
-      chunks = [];
-      micBuffer = [];
-    }
-  </script>
+  src.start(startAt);
+  playCursor = startAt + audioBuffer.duration;
+
+  activeSources.push(src);
+  src.onended = () => {
+    activeSources = activeSources.filter(s => s !== src);
+    if (!playing) indicator.classList.remove("playing");
+  };
+}
+
+
+function cancelPlayback(){
+  activeSources.forEach(s=>{ try{ s.stop(); }catch(e){} });
+  activeSources.length = 0;
+  playCursor = audioCtx.currentTime;
+}
+
+/* ---------- CLEANUP ---------- */
+function cleanup(){
+  cancelPlayback();
+  processor && processor.disconnect();
+  source    && source.disconnect();
+  audioCtx  && audioCtx.close();
+  ws        && ws.close();
+  listening = playing = false;
+  indicator.classList.remove("listening","playing");
+  playCursor = 0; micBuffer.length = 0;
+}
+</script>
 </body>
 </html>
