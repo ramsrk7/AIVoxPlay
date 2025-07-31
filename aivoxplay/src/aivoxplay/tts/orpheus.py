@@ -14,10 +14,11 @@ from snac import SNAC
 import torch
 import numpy as np
 from typing import Sequence, Union
-from .factory import TokenStreamParser, OrpheusAudioProcessor, dummy_stream_custom_tokens_without_parser
-import threading
+from .factory import TokenStreamParser, OrpheusAudioProcessor, dummy_stream_custom_tokens_without_parser, pcm16le_normalizer
+from .pipeline import ParagraphStreamController
 import asyncio
 import random
+import threading
 
 HF_TOKEN=os.getenv("HF_TOKEN")
 
@@ -293,3 +294,16 @@ class OrpheusTTS(BaseTTS):
             return self._decode_tokens(response_tokens), 24000
         
         return
+
+    # --- batch mode: return a BatchStream object ---
+    def queue(self,voice="tara", max_workers=1):
+
+        controller = ParagraphStreamController(
+            speak_tokens_fn=self._streaming_speak_v2,                    # your token stream
+            decode_tokens_fn=OrpheusAudioProcessor.tokens_decoder_sync,  # your byte decoder
+            voice=voice,
+            max_workers=max_workers,
+        )
+
+        return controller
+    

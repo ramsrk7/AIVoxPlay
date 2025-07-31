@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>OpenAI Realtime STT Viewer</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    #transcript { font-size: 1.2rem; white-space: pre-wrap; margin-bottom: 1rem; }
+    #raw { font-family: monospace; background: #f0f0f0; padding: 1rem; height: 200px; overflow-y: auto; }
+    button { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <h2>🎤 Live Transcription (OpenAI)</h2>
+  <button onclick="start()">Start</button>
+  <button onclick="stop()">Stop</button>
+
+  <h3>Transcript</h3>
+  <div id="transcript">[Waiting for input]</div>
+
+  <h3>Raw Events</h3>
+  <div id="raw"></div>
+
+  <script>
+    let socket, audioCtx, processor, source;
+    const cfg = {
+      type: "transcription_session.update",
+      session: {                     // Speaches follows the OpenAI schema
+        input_audio_format: "pcm16",
+        input_audio_transcription: {
+          model: "my-whisper",       // <- alias defined above
+          language: "en"             // "" is **invalid** – must be ISO‑639‑1 or omit
+        },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500
+        },
+        input_audio_noise_reduction: { type: "near_field" }
+      }
+    };
+    
+    function encodePCM(f32) {
+      const i16 = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++) i16[i] = Math.max(-32768, Math.min(32767, f32[i]*32767));
+      return btoa(String.fromCharCode(...new Uint8Array(i16.buffer)));
+    }
+    
+    async function start() {
+      document.getElementById("transcript").textContent = "[Listening…]";
+      socket = new WebSocket("ws://localhost:8000/v1/realtime?model=my-whisper");
+    
+      socket.onopen = async () => {
+        socket.send(JSON.stringify(cfg));            // ① configure session
+    
+        audioCtx = new AudioContext({ sampleRate: 16000 });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        source = audioCtx.createMediaStreamSource(stream);
+        processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    
+        processor.onaudioprocess = (e) => {          // ② stream PCM chunks
+          const b64 = encodePCM(e.inputBuffer.getChannelData(0));
+          socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
+        };
+    
+        source.connect(processor);
+        processor.connect(audioCtx.destination);
+      };
+    
+      socket.onmessage = ({ data }) => {             // ③ read transcripts
+        const evt = JSON.parse(data);
+        if (evt.type?.startsWith("conversation.item")) {
+          const c = evt.item?.content?.[0];
+          const text = c?.transcript?.text || c?.input_audio_transcription?.text;
+          if (text) document.getElementById("transcript").textContent = text;
+        }
+      };
+    }
+    
+    function stop() {
+      if (processor) processor.disconnect();
+      if (source) source.disconnect();
+      if (socket)  socket.close();
+      if (audioCtx) audioCtx.close();
+    }
+    </script>
+    
+</body>
+</html>
