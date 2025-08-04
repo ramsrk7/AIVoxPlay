@@ -7,8 +7,6 @@
 
 TTS: Only Orpheus 3B is currenly supported. 
 
-Whether you're building an AI voice assistant, a voice interface for your product, or prototyping real-time conversational pipelines, aivoxplay gives you the tools to get started quickly and scale intelligently.
-
 ---
 
 ## 🚀 Getting Started (Development)
