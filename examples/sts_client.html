@@ -96,179 +96,180 @@
 
 <!--  ――  LOGIC ――――――――――――――――――――――――――――――――――― -->
 <script>
-/* CONFIG */
-const WS_URL     = "ws://localhost:8001/voice";
-const SR         = 24_000;          // sample-rate of server PCM
-const VAD_THRESH = 0.02;
-
-/* DOM refs */
-const indicator = document.getElementById('indicator');
-const startBtn  = document.getElementById('startBtn');
-const stopBtn   = document.getElementById('stopBtn');
-const transcriptList = document.getElementById('transcript-list');
-
-/* State */
-let ws, audioCtx, source, processor;
-let listening  = false, playing = false;
-let playCursor = 0;
-let micBuffer  = [];                 // queued mic chunks while TTS plays
-let activeSources = [];              // currently scheduled Web-Audio buffers
-
-/* ---------- BUTTONS ---------- */
-startBtn.onclick = ()=>{ startBtn.disabled=true; stopBtn.disabled=false; init(); };
-stopBtn.onclick  = ()=>{ stopBtn.disabled=true;  startBtn.disabled=false; cleanup(); };
-
-/* ---------- SOCKET ---------- */
-function init(){
-  ws = new WebSocket(WS_URL);
-  ws.binaryType = "arraybuffer";
-  ws.onopen    = onWsOpen;
-  ws.onmessage = onWsMessage;
-  ws.onerror   = e  => console.error("WebSocket error:", e);
-  ws.onclose   = ev => console.log("WebSocket closed:", ev.code, ev.reason);
-}
-
-function onWsOpen(){
-  listening = true;
-  audioCtx  = new AudioContext({ sampleRate: SR });
-
-  navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
-    source    = audioCtx.createMediaStreamSource(stream);
-    processor = audioCtx.createScriptProcessor(4096,1,1);
-    source.connect(processor); processor.connect(audioCtx.destination);
-    processor.onaudioprocess = handleMic;
-  }).catch(err=>console.error("getUserMedia error:", err));
-}
-
-/* ---------- MICROPHONE ---------- */
-function handleMic(e){
-  const data = e.inputBuffer.getChannelData(0);
-  const rms  = Math.sqrt(data.reduce((s,v)=>s+v*v, 0) / data.length);
-
-  // indicator
-  if(rms > VAD_THRESH && listening) indicator.classList.add("listening");
-  else                              indicator.classList.remove("listening");
-
-  // float32 → int16
-  const pcm16 = new Int16Array(data.length);
-  for(let i=0;i<data.length;i++){
-    const s = Math.max(-1, Math.min(1, data[i]));
-    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  /* CONFIG */
+  const CLIENT_ID  = crypto.randomUUID();  // generate a unique ID per session
+  const SR         = 24000;                // must match server sample rate
+  const VAD_THRESH = 0.02;
+  const WS_IN  = `ws://localhost:8000/audio/in/${CLIENT_ID}`;
+  const WS_OUT = `ws://localhost:8000/audio/out/${CLIENT_ID}`;
+  
+  /* DOM refs */
+  const indicator = document.getElementById('indicator');
+  const startBtn  = document.getElementById('startBtn');
+  const stopBtn   = document.getElementById('stopBtn');
+  const transcriptList = document.getElementById('transcript-list');
+  
+  /* State */
+  let wsIn, wsOut, audioCtx, source, processor;
+  let listening = false, playing = false;
+  let playCursor = 0;
+  let micBuffer = [];
+  let activeSources = [];
+  
+  /* ---------- BUTTONS ---------- */
+  startBtn.onclick = () => { startBtn.disabled=true; stopBtn.disabled=false; init(); };
+  stopBtn.onclick  = () => { stopBtn.disabled=true;  startBtn.disabled=false; cleanup(); };
+  
+  /* ---------- INIT ---------- */
+  function init() {
+    wsIn = new WebSocket(WS_IN);
+    wsOut = new WebSocket(WS_OUT);
+    wsIn.onopen = onWsInOpen;
+    wsOut.onmessage = onWsOutMessage;
+    wsOut.binaryType = "arraybuffer";
   }
-
-  /*  ✱✱✱  USER STARTS TALKING WHILE AUDIO PLAYING  ✱✱✱ */
-  if(playing && rms > VAD_THRESH){
-    cancelPlayback();                   // stop Web-Audio buffers
-    ws.send(JSON.stringify({ type:"cancel_audio" }));  // notify server
-
-    playing   = false;
+  
+  /* ---------- Mic Audio Stream ---------- */
+  function onWsInOpen() {
     listening = true;
-    indicator.classList.remove("playing");
-    indicator.classList.add("listening");
-
-    // flush buffered mic data so STT doesn’t lose first syllables
-    micBuffer.forEach(buf=>{
-      ws.send(JSON.stringify({ type:"input_audio_buffer.append",
-                               audio:btoa(String.fromCharCode(...new Uint8Array(buf))) }));
-    });
+    audioCtx = new AudioContext({ sampleRate: SR });
+  
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      source = audioCtx.createMediaStreamSource(stream);
+      processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+      processor.onaudioprocess = handleMic;
+    }).catch(err => console.error("Mic error:", err));
+  }
+  
+  function handleMic(e) {
+    const data = e.inputBuffer.getChannelData(0);
+    const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length);
+  
+    // visual indicator
+    if (rms > VAD_THRESH && listening) indicator.classList.add("listening");
+    else                               indicator.classList.remove("listening");
+  
+    // float32 to int16
+    const pcm16 = new Int16Array(data.length);
+    for (let i = 0; i < data.length; i++) {
+      const s = Math.max(-1, Math.min(1, data[i]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+  
+    if (playing && rms > VAD_THRESH) {
+      cancelPlayback();
+      wsIn.send(JSON.stringify({ type: "cancel_audio" }));
+      playing = false;
+      listening = true;
+      indicator.classList.remove("playing");
+      indicator.classList.add("listening");
+  
+      micBuffer.forEach(buf => {
+        wsIn.send(JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: btoa(String.fromCharCode(...new Uint8Array(buf)))
+        }));
+      });
+      micBuffer.length = 0;
+    }
+  
+    if (listening) {
+      wsIn.send(JSON.stringify({
+        type: "input_audio_buffer.append",
+        audio: btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)))
+      }));
+    } else {
+      micBuffer.push(pcm16.buffer);
+    }
+  }
+  
+  /* ---------- WebSocket OUT ---------- */
+  function onWsOutMessage(evt) {
+    if (typeof evt.data === "string") {
+      const msg = JSON.parse(evt.data);
+  
+      if (msg.type === "transcript") addTranscript(msg.text);
+      if (msg.type === "audio.cancelled") {
+        cancelPlayback(); playing = false; listening = true;
+        indicator.classList.remove("playing");
+      }
+      if (msg.type === "audio.complete") {
+        playing = false; listening = true;
+        indicator.classList.remove("playing");
+      }
+      return;
+    }
+  
+    if (!playing) {
+      playing = true;
+      listening = false;
+      indicator.classList.remove("listening");
+      indicator.classList.add("playing");
+    }
+  
+    playPcmInt16(evt.data);
+  }
+  
+  /* ---------- Playback & UI ---------- */
+  function addTranscript(text) {
+    if (transcriptList.firstElementChild?.style.opacity) transcriptList.innerHTML = "";
+    const li = document.createElement("li");
+    li.textContent = text;
+    transcriptList.appendChild(li);
+    transcriptList.scrollTop = transcriptList.scrollHeight;
+  }
+  
+  function playPcmInt16(buf) {
+    const i16 = new Int16Array(buf);
+    const f32 = new Float32Array(i16.length);
+    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
+  
+    const audioBuffer = audioCtx.createBuffer(1, f32.length, SR);
+    audioBuffer.getChannelData(0).set(f32);
+  
+    const src = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0;
+    src.buffer = audioBuffer;
+    src.connect(gain).connect(audioCtx.destination);
+  
+    const startAt = Math.max(playCursor, audioCtx.currentTime + 0.01);
+    const fadeTime = 0.005;
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(1, startAt + fadeTime);
+  
+    src.start(startAt);
+    playCursor = startAt + audioBuffer.duration;
+  
+    activeSources.push(src);
+    src.onended = () => {
+      activeSources = activeSources.filter(s => s !== src);
+      if (!playing) indicator.classList.remove("playing");
+    };
+  }
+  
+  function cancelPlayback() {
+    activeSources.forEach(s => { try { s.stop(); } catch (e) {} });
+    activeSources.length = 0;
+    playCursor = audioCtx.currentTime;
+  }
+  
+  /* ---------- Cleanup ---------- */
+  function cleanup() {
+    cancelPlayback();
+    processor?.disconnect();
+    source?.disconnect();
+    audioCtx?.close();
+    wsIn?.close();
+    wsOut?.close();
+    listening = playing = false;
+    indicator.classList.remove("listening", "playing");
+    playCursor = 0;
     micBuffer.length = 0;
   }
-
-  // send or buffer
-  if(listening){
-    ws.send(JSON.stringify({ type:"input_audio_buffer.append",
-                             audio:btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer))) }));
-  }else{
-    micBuffer.push(pcm16.buffer);
-  }
-}
-
-/* ---------- SERVER MESSAGES ---------- */
-function onWsMessage(evt){
-  if(typeof evt.data === "string"){
-    const msg = JSON.parse(evt.data);
-
-    if(msg.type === "transcript") addTranscript(msg.text);
-
-    if(msg.type === "audio.cancelled"){
-      cancelPlayback();
-      playing=false; listening=true; indicator.classList.remove("playing");
-    }
-
-    if(msg.type === "audio.complete"){
-      playing=false; listening=true; indicator.classList.remove("playing");
-    }
-    return;
-  }
-
-  // binary PCM chunk
-  if(!playing){
-    playing   = true;
-    listening = false;
-    indicator.classList.remove("listening");
-    indicator.classList.add("playing");
-  }
-  playPcmInt16(evt.data);
-}
-
-/* ---------- TRANSCRIPT ---------- */
-function addTranscript(text){
-  if(transcriptList.firstElementChild?.style.opacity) transcriptList.innerHTML="";
-  const li = document.createElement("li");
-  li.textContent = text;
-  transcriptList.appendChild(li);
-  transcriptList.scrollTop = transcriptList.scrollHeight;
-}
-
-/* ---------- PLAYBACK utils ---------- */
-function playPcmInt16(buf) {
-  const i16 = new Int16Array(buf);
-  const f32 = new Float32Array(i16.length);
-  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
-
-  const audioBuffer = audioCtx.createBuffer(1, f32.length, SR);
-  audioBuffer.getChannelData(0).set(f32);
-
-  // GainNode for fade-in
-  const src  = audioCtx.createBufferSource();
-  const gain = audioCtx.createGain();
-  gain.gain.value = 0;                          // start muted
-  src.buffer = audioBuffer;
-  src.connect(gain).connect(audioCtx.destination);
-
-  const startAt   = Math.max(playCursor, audioCtx.currentTime + 0.01);
-  const fadeTime  = 0.005;                      // 5 ms fade
-  gain.gain.setValueAtTime(0, startAt);
-  gain.gain.linearRampToValueAtTime(1, startAt + fadeTime);
-
-  src.start(startAt);
-  playCursor = startAt + audioBuffer.duration;
-
-  activeSources.push(src);
-  src.onended = () => {
-    activeSources = activeSources.filter(s => s !== src);
-    if (!playing) indicator.classList.remove("playing");
-  };
-}
-
-
-function cancelPlayback(){
-  activeSources.forEach(s=>{ try{ s.stop(); }catch(e){} });
-  activeSources.length = 0;
-  playCursor = audioCtx.currentTime;
-}
-
-/* ---------- CLEANUP ---------- */
-function cleanup(){
-  cancelPlayback();
-  processor && processor.disconnect();
-  source    && source.disconnect();
-  audioCtx  && audioCtx.close();
-  ws        && ws.close();
-  listening = playing = false;
-  indicator.classList.remove("listening","playing");
-  playCursor = 0; micBuffer.length = 0;
-}
 </script>
+  
 </body>
 </html>
