@@ -82,15 +82,14 @@ This package is for experimentation and learning. It is not production-ready. Th
 
 ## 🛠️ API Overview
 
-- **/voice** (WebSocket):  
-  - `input_audio_buffer.append`: Send base64-encoded PCM audio.
-  - `cancel_audio`: Interrupt current TTS playback.
-  - Receives:
-    - `transcript`: Recognized text.
-    - Binary audio chunks (PCM) for playback.
-    - `audio.complete`/`audio.cancelled`: Playback status.
+AIVoxPlay provides two main WebSocket endpoints for real-time voice interaction:
 
-See `examples/sts_client.html` for a reference client implementation.
+- **`/audio/in/{client_id}`**: Send microphone audio and control messages to the server.
+- **`/audio/out/{client_id}`**: Receive transcripts and synthesized audio responses from the server.
+
+The protocol supports streaming audio, real-time transcription, TTS playback, and barge-in (interrupt) functionality.
+
+**For detailed message formats, interaction flow, and client/server examples, see [`examples/README.md`](examples/README.md).**
 
 ---
 

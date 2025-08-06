@@ -1,6 +1,7 @@
 # ../providers/openai.py
 import json, base64, struct
 from typing import AsyncIterator
+from websockets.exceptions import ConnectionClosedOK
 from ..core import StreamingProvider, StreamError
 from ..helper.ws import WebSocketManager
 
@@ -16,8 +17,12 @@ class OpenAIProvider(StreamingProvider):
         self._ws = None
 
     async def connect(self):
-        manager = WebSocketManager(self.url, self.headers)
-        self._ws = await manager.__aenter__()  # keep manager alive
+        try:
+            manager = WebSocketManager(self.url, self.headers)
+            self._ws = await manager.__aenter__()
+        except Exception as e:
+            print("[OpenAIProvider] WebSocket connect failed:", e)
+            raise
         # receive session.created
         created = json.loads(await self._ws.recv())
         sess_id = created["session"]["id"]
@@ -56,13 +61,18 @@ class OpenAIProvider(StreamingProvider):
         await self._ws.send(json.dumps(msg))
 
     async def receive_messages(self) -> AsyncIterator[dict]:
-        while True:
-            raw = await self._ws.recv()
-            print(raw)
-            try:
-                yield json.loads(raw)
-            except json.JSONDecodeError:
-                raise StreamError("Received non-JSON frame")
+        try:
+            while True:
+                raw = await self._ws.recv()
+                print(raw)
+                try:
+                    yield json.loads(raw)
+                except json.JSONDecodeError:
+                    raise StreamError("Received non-JSON frame")
+        except ConnectionClosedOK:
+            print("[OpenAIProvider] WebSocket closed cleanly (1000)")
+            return
+            
 
     async def close(self):
         await self._ws.close()
