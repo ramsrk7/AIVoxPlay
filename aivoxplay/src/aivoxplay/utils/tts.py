@@ -37,6 +37,7 @@ class QueueSession:
 
     def add(self, text: str):
         with self._lock:
+            print("Adding text to queue")
             self._controller.add(text)
 
     def clear(self):
@@ -62,6 +63,8 @@ class QueueSession:
             current.close()  # stream() will finish after queued items are drained
 
             # New session for subsequent /add calls (arrive while current is streaming)
+            print("Creating new controller")
+            print(self.engine)
             self._controller = self.engine.queue(voice=self.voice, max_workers=self.max_workers)
 
             return current
