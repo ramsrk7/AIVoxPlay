@@ -25,7 +25,7 @@ HF_TOKEN=os.getenv("HF_TOKEN")
 
 class OrpheusTTS(BaseTTS):
     
-    def __init__(self, endpoint: str, model_name: str = "unsloth/orpheus-3b-0.1-ft", api_key: str = "dummy_key"):
+    def __init__(self, endpoint: str, voice: str = "tara", model_name: str = "unsloth/orpheus-3b-0.1-ft", api_key: str = "dummy_key"):
         super().__init__(model_name)
         # Load model and tokenizer (vLLM/HuggingFace etc.)
         self.tokenizer = AutoTokenizer.from_pretrained("canopylabs/orpheus-3b-0.1-ft", use_fast=False, token=HF_TOKEN)
@@ -37,6 +37,7 @@ class OrpheusTTS(BaseTTS):
         self.END_TEXT_TOKEN_ID = 128009  # End of text
         self.END_HUMAN_TOKEN_ID = 128260  # End of human
         self.voices = ["tara","leah","jess","leo","dan","mia","zac","zoe"]
+        self.voice = voice
         self.endpoint = endpoint
         self.api_key = api_key
         self._tok_base_id = self.tokenizer.encode("<custom_token_0>", add_special_tokens=False, return_tensors=None)[0]

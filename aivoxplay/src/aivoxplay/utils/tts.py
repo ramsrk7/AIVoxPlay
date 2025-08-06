@@ -31,7 +31,7 @@ class QueueSession:
     def __init__(self, engine, max_workers=2, voice="tara"):
         self.engine = engine
         self.max_workers = max_workers
-        self.voice = voice
+        self.voice = self.engine.voice
         self._lock = threading.Lock()
         self._controller = self.engine.queue(voice=self.voice, max_workers=self.max_workers)
 

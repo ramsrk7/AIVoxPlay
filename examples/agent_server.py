@@ -7,10 +7,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from aivoxplay.sts.server.agent import get_app
 from aivoxplay.tts.orpheus import OrpheusTTS
+from aivoxplay.tts.openai_client import OpenAITTS
 from aivoxplay.tts.engine import TTSEngine
 from aivoxplay.stt.providers.openai import OpenAIProvider
 
-tts = TTSEngine(tts=OrpheusTTS(endpoint="https://m6gwtl16xaun5i-8000.proxy.runpod.net/v1"))
+#tts = TTSEngine(tts=OrpheusTTS(endpoint="https://m6gwtl16xaun5i-8000.proxy.runpod.net/v1"))
+tts = TTSEngine(tts=OpenAITTS(voice="ash"))
 stt = OpenAIProvider(api_key=os.getenv('OPENAI_API_KEY'))
 
 async def external_chat_fn(query):

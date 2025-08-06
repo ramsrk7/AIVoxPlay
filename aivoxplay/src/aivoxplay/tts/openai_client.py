@@ -12,9 +12,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai = AsyncOpenAI()
 
 class OpenAITTS:
-    def __init__(self):
+    def __init__(self, voice="coral"):
         self.openai = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.decode_tokens_fn = None
+        self.voice = voice
 
     async def speak(self, text: str):
         async with self.openai.audio.speech.with_streaming_response.create(
