@@ -141,22 +141,41 @@ class ParagraphStreamController:
     # ------------------------------ Internals ------------------------------
 
     def _run_job(self, job: "_Job") -> None:
-        try:
-            with self._sem:
-                token_gen = self._speak_tokens_fn(job.text, self._voice)
-                for b in self._decode_tokens_fn(token_gen):
-                    if job.cancel.is_set():
-                        break
-                    job.out_q.put(b)
-        except Exception as e:
-            # <-- DO NOT swallow. At least print/log it.
-            import traceback, sys
-            print(f"[PSC] job {job.id} crashed: {e}", file=sys.stderr)
-            traceback.print_exc()
-        finally:
+        if self._decode_tokens_fn:
             try:
-                job.out_q.put(_END)
-            except Exception:
-                pass
-            job.done.set()
+                with self._sem:
+                    token_gen = self._speak_tokens_fn(job.text, self._voice)
+                    for b in self._decode_tokens_fn(token_gen):
+                        if job.cancel.is_set():
+                            break
+                        job.out_q.put(b)
+            except Exception as e:
+                # <-- DO NOT swallow. At least print/log it.
+                import traceback, sys
+                print(f"[PSC] job {job.id} crashed: {e}", file=sys.stderr)
+                traceback.print_exc()
+            finally:
+                try:
+                    job.out_q.put(_END)
+                except Exception:
+                    pass
+                job.done.set()
+        else:
+            try:
+                with self._sem:
+                    token_gen = self._speak_tokens_fn(job.text, self._voice)
+                    for b in token_gen:
+                        if job.cancel.is_set():
+                            break
+                        job.out_q.put(b)
+            except Exception as e:
+                # <-- DO NOT swallow. At least print/log it.
+                import traceback, sys
+                print(f"[PSC] job {job.id} crashed: {e}", file=sys.stderr)
+                traceback.print_exc()
+            finally:
+                try:
+                    job.out_q.put(_END)
+                except Exception:
+                    pass
 
