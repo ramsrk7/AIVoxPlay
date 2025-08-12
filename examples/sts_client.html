@@ -1,275 +1,480 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Realtime Voice Agent</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Realtime Voice Agent</title>
 
-<!--  ――  DESIGN ――――――――――――――――――――――――――――――――――― -->
-<style>
-  :root {
-    --clr-accent : #22c55e;            /* green while listening  */
-    --clr-play   : #7c3aed;            /* purple while playing   */
-    --clr-play2  : #c084fc;            /* lighter pulse purple    */
-    --clr-bg     : #f5f7fa;
-    --clr-card   : #ffffff;
-    --radius     : 14px;
-    --shadow     : 0 8px 20px rgba(0,0,0,.08);
-    --font-main  : 'Inter', system-ui, sans-serif;
-  }
+  <style>
+    :root {
+      --clr-accent: #22c55e;
+      --clr-play: #7c3aed;
+      --clr-play2: #c084fc;
+      --clr-bg: #f5f7fa;
+      --clr-card: #ffffff;
+      --radius: 14px;
+      --shadow: 0 8px 20px rgba(0, 0, 0, .08);
+      --font-main: 'Inter', system-ui, sans-serif;
+    }
 
-  *{ box-sizing:border-box; }
+    * {
+      box-sizing: border-box
+    }
 
-  body{
-    min-height:100vh;
-    display:flex; flex-direction:column; align-items:center;
-    padding:2.5rem 1rem; background:var(--clr-bg);
-    font-family:var(--font-main); color:#333;
-  }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem;
+      background: var(--clr-bg);
+      font-family: var(--font-main);
+      color: #333
+    }
 
-  /* ---------- INDICATOR ---------- */
-  #indicator{
-    width:90px; height:90px; border-radius:50%;
-    background:var(--clr-accent); box-shadow:0 0 0 0 var(--clr-accent);
-    margin-bottom:1.5rem; transition:background .3s;
-  }
-  .listening{
-    animation:bounce .5s infinite alternate,
-              glow-listen 1s infinite;
-  }
-  .playing{
-    animation:pulse-size 1.2s infinite ease-in-out,
-              glow-play   1.2s infinite ease-in-out,
-              pulse-color 1.2s infinite ease-in-out;
-  }
+    #indicator {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: var(--clr-accent);
+      box-shadow: 0 0 0 0 var(--clr-accent);
+      margin-bottom: 1.5rem;
+      transition: background .3s
+    }
 
-  /* keyframes */
-  @keyframes bounce       { to   { transform:translateY(-28px);} }
-  @keyframes pulse-size   { 0%,100%{transform:scale(1);} 50%{transform:scale(1.2);} }
-  @keyframes pulse-color  { 0%,100%{background:var(--clr-play);}
-                            50%    {background:var(--clr-play2);} }
-  @keyframes glow-listen  { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.7);}
-                            100%{box-shadow:0 0 16px 12px rgba(34,197,94,0);} }
-  @keyframes glow-play    { 0%{box-shadow:0 0 0 0 rgba(124,58,237,.7);}
-                            100%{box-shadow:0 0 16px 12px rgba(124,58,237,0);} }
+    .listening {
+      animation: bounce .5s infinite alternate, glow-listen 1s infinite
+    }
 
-  /* ---------- BUTTONS ---------- */
-  .btn{
-    padding:.75rem 1.5rem; margin:.5rem; font-size:1rem; font-weight:600;
-    border:none; border-radius:var(--radius); background:var(--clr-accent);
-    color:#fff; cursor:pointer; transition:transform .15s, background .25s;
-    box-shadow:var(--shadow);
-  }
-  .btn:disabled{ background:#c4c4c4; cursor:not-allowed; box-shadow:none; }
-  .btn:not(:disabled):hover{ transform:translateY(-2px); }
+    .playing {
+      animation: pulse-size 1.2s infinite ease-in-out, glow-play 1.2s infinite ease-in-out, pulse-color 1.2s infinite ease-in-out
+    }
 
-  /* ---------- TRANSCRIPT ---------- */
-  #transcript-card{
-    margin-top:2rem; width:100%; max-width:680px;
-    background:var(--clr-card); border-radius:var(--radius); box-shadow:var(--shadow);
-    padding:1rem 1.25rem; overflow-y:auto; height:220px;
-  }
-  #transcript-list{ list-style:none; margin:0; padding:0; }
-  #transcript-list li{
-    padding:.4rem 0; border-bottom:1px solid #ececec;
-    font-size:1.05rem; line-height:1.4;
-  }
-  #transcript-list li:last-child{ border-bottom:none; }
-</style>
+    @keyframes bounce {
+      to {
+        transform: translateY(-28px)
+      }
+    }
 
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    @keyframes pulse-size {
+
+      0%,
+      100% {
+        transform: scale(1)
+      }
+
+      50% {
+        transform: scale(1.2)
+      }
+    }
+
+    @keyframes pulse-color {
+
+      0%,
+      100% {
+        background: var(--clr-play)
+      }
+
+      50% {
+        background: var(--clr-play2)
+      }
+    }
+
+    @keyframes glow-listen {
+      0% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, .7)
+      }
+
+      100% {
+        box-shadow: 0 0 16px 12px rgba(34, 197, 94, 0)
+      }
+    }
+
+    @keyframes glow-play {
+      0% {
+        box-shadow: 0 0 0 0 rgba(124, 58, 237, .7)
+      }
+
+      100% {
+        box-shadow: 0 0 16px 12px rgba(124, 58, 237, 0)
+      }
+    }
+
+    .btn {
+      padding: .75rem 1.5rem;
+      margin: .5rem;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: var(--radius);
+      background: var(--clr-accent);
+      color: #fff;
+      cursor: pointer;
+      transition: transform .15s, background .25s;
+      box-shadow: var(--shadow)
+    }
+
+    .btn:disabled {
+      background: #c4c4c4;
+      cursor: not-allowed;
+      box-shadow: none
+    }
+
+    .btn:not(:disabled):hover {
+      transform: translateY(-2px)
+    }
+
+    #transcript-card {
+      margin-top: 2rem;
+      width: 100%;
+      max-width: 680px;
+      background: var(--clr-card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1rem 1.25rem;
+      overflow-y: auto;
+      height: 220px
+    }
+
+    #transcript-list {
+      list-style: none;
+      margin: 0;
+      padding: 0
+    }
+
+    #transcript-list li {
+      padding: .4rem 0;
+      border-bottom: 1px solid #ececec;
+      font-size: 1.05rem;
+      line-height: 1.4
+    }
+
+    #transcript-list li:last-child {
+      border-bottom: none
+    }
+  </style>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
 </head>
+
 <body>
 
-<div id="indicator"></div>
+  <div id="indicator"></div>
 
-<div>
-  <button id="startBtn" class="btn">Start</button>
-  <button id="stopBtn"  class="btn" disabled>Stop</button>
-</div>
+  <div>
+    <button id="startBtn" class="btn">Start</button>
+    <button id="stopBtn" class="btn" disabled>Stop</button>
+  </div>
 
-<div id="transcript-card">
-  <ul id="transcript-list">
-    <li style="opacity:.6">Transcript will appear here…</li>
-  </ul>
-</div>
+  <div id="transcript-card">
+    <ul id="transcript-list">
+      <li style="opacity:.6">Transcript will appear here…</li>
+    </ul>
+  </div>
 
-<!--  ――  LOGIC ――――――――――――――――――――――――――――――――――― -->
-<script>
-  /* CONFIG */
-  const CLIENT_ID  = crypto.randomUUID();  // generate a unique ID per session
-  const SR         = 24000;                // must match server sample rate
-  const VAD_THRESH = 0.02;
-  const WS_IN  = `ws://localhost:8000/audio/in/${CLIENT_ID}`;
-  const WS_OUT = `ws://localhost:8000/audio/out/${CLIENT_ID}`;
+  <script>
+    /* CONFIG */
+    const CLIENT_ID = crypto.randomUUID();
+    const SR = 24000;
+    const VAD_THRESH = 0.02;
+    const BARGE_VAD  = 0.012;
   
-  /* DOM refs */
-  const indicator = document.getElementById('indicator');
-  const startBtn  = document.getElementById('startBtn');
-  const stopBtn   = document.getElementById('stopBtn');
-  const transcriptList = document.getElementById('transcript-list');
+    const WS_IN_URL  = `ws://localhost:8000/audio/in/${CLIENT_ID}`;
+    const WS_OUT_URL = `ws://localhost:8000/audio/out/${CLIENT_ID}`;
   
-  /* State */
-  let wsIn, wsOut, audioCtx, source, processor;
-  let listening = false, playing = false;
-  let playCursor = 0;
-  let micBuffer = [];
-  let activeSources = [];
+    /* DOM */
+    const indicator = document.getElementById('indicator');
+    const startBtn  = document.getElementById('startBtn');
+    const stopBtn   = document.getElementById('stopBtn');
+    const transcriptList = document.getElementById('transcript-list');
   
-  /* ---------- BUTTONS ---------- */
-  startBtn.onclick = () => { startBtn.disabled=true; stopBtn.disabled=false; init(); };
-  stopBtn.onclick  = () => { stopBtn.disabled=true;  startBtn.disabled=false; cleanup(); };
+    /* STATE */
+    let wsIn=null, wsOut=null;
+    let audioCtx=null, ttsGain=null, micSilenceGain=null;
+    let source=null, processor=null, micStream=null;
   
-  /* ---------- INIT ---------- */
-  function init() {
-    wsIn = new WebSocket(WS_IN);
-    wsOut = new WebSocket(WS_OUT);
-    wsIn.onopen = onWsInOpen;
-    wsOut.onmessage = onWsOutMessage;
-    wsOut.binaryType = "arraybuffer";
-  }
+    let listening=false, playing=false;
+    let playCursor=0;
+    let activeSources=[];
+    let dropUntilTranscript=false;   // ignore audio bytes until next transcript
+    let outputCut=false;             // ttsGain disconnected from destination
   
-  /* ---------- Mic Audio Stream ---------- */
-  function onWsInOpen() {
-    listening = true;
-    audioCtx = new AudioContext({ sampleRate: SR });
+    // binary parsing helpers
+    let outLeftover=new Uint8Array(0);
+    let sawWavHeader=false;
   
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      source = audioCtx.createMediaStreamSource(stream);
-      processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-      processor.onaudioprocess = handleMic;
-    }).catch(err => console.error("Mic error:", err));
-  }
+    /* BOOT */
+    startBtn.onclick = () => { startBtn.disabled=true; stopBtn.disabled=false; init(); };
+    stopBtn.onclick  = () => { stopBtn.disabled=true;  startBtn.disabled=false; cleanup(); };
   
-  function handleMic(e) {
-    const data = e.inputBuffer.getChannelData(0);
-    const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length);
-  
-    // visual indicator
-    if (rms > VAD_THRESH && listening) indicator.classList.add("listening");
-    else                               indicator.classList.remove("listening");
-  
-    // float32 to int16
-    const pcm16 = new Int16Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      const s = Math.max(-1, Math.min(1, data[i]));
-      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    function init(){
+      wsIn = new WebSocket(WS_IN_URL);
+      wsOut = new WebSocket(WS_OUT_URL);
+      wsOut.binaryType = "arraybuffer";
+      wsOut.onmessage = onWsOutMessage;
+      wsIn.onopen = onWsInOpen;
     }
   
-    if (playing && rms > VAD_THRESH) {
-      cancelPlayback();
-      wsIn.send(JSON.stringify({ type: "cancel_audio" }));
-      playing = false;
+    /* Audio graph */
+    async function onWsInOpen(){
+      ensureAudioCtx();
+      buildOutputGraph();
+      await ensureMicStream();
+      buildMicGraph();
       listening = true;
-      indicator.classList.remove("playing");
-      indicator.classList.add("listening");
+    }
   
-      micBuffer.forEach(buf => {
-        wsIn.send(JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: btoa(String.fromCharCode(...new Uint8Array(buf)))
-        }));
+    function ensureAudioCtx(){
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)({
+        sampleRate: SR, latencyHint:'interactive'
       });
-      micBuffer.length = 0;
     }
   
-    if (listening) {
-      wsIn.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)))
-      }));
-    } else {
-      micBuffer.push(pcm16.buffer);
+    function buildOutputGraph(){
+      ttsGain = audioCtx.createGain();
+      ttsGain.gain.value = 1;
+      ttsGain.connect(audioCtx.destination); // speaker line
+      outputCut = false;
     }
-  }
   
-  /* ---------- WebSocket OUT ---------- */
-  function onWsOutMessage(evt) {
-    if (typeof evt.data === "string") {
-      const msg = JSON.parse(evt.data);
+    async function ensureMicStream(){
+      if (!micStream) micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    }
   
-      if (msg.type === "transcript") addTranscript(msg.text);
-      if (msg.type === "audio.cancelled") {
-        cancelPlayback(); playing = false; listening = true;
-        indicator.classList.remove("playing");
+    function buildMicGraph(){
+      destroyMicNodes();
+      source = audioCtx.createMediaStreamSource(micStream);
+      // Buffer size must be power of 2 between 256–16384 (or 0 for auto)
+      processor = audioCtx.createScriptProcessor(256, 1, 1);
+      source.connect(processor);
+  
+      // keep node alive but silent (no feedback)
+      micSilenceGain = audioCtx.createGain();
+      micSilenceGain.gain.value = 0;
+      processor.connect(micSilenceGain);
+      micSilenceGain.connect(audioCtx.destination);
+  
+      processor.onaudioprocess = handleMic;
+    }
+  
+    function destroyMicNodes(){
+      try{processor?.disconnect();}catch{};
+      try{source?.disconnect();}catch{};
+      try{micSilenceGain?.disconnect();}catch{};
+      processor=source=micSilenceGain=null;
+    }
+  
+    function cancelPlayback(){
+      activeSources.forEach(s => { try{s.stop(0);}catch{} });
+      activeSources = [];
+      playCursor = audioCtx?.currentTime ?? 0;
+    }
+  
+    /* Cut/restore speaker line */
+    function cutOutputNow(){
+      // 1) silence: disconnect speaker line
+      if (ttsGain && !outputCut){
+        try { ttsGain.disconnect(); } catch {}
+        outputCut = true;
       }
-      if (msg.type === "audio.complete") {
-        playing = false; listening = true;
-        indicator.classList.remove("playing");
+      // 2) stop anything already scheduled
+      cancelPlayback();
+    }
+  
+    function restoreOutput(){
+      if (ttsGain && outputCut){
+        try { ttsGain.connect(audioCtx.destination); } catch {}
+        outputCut = false;
       }
-      return;
     }
   
-    if (!playing) {
-      playing = true;
-      listening = false;
-      indicator.classList.remove("listening");
-      indicator.classList.add("playing");
+    /* Mic + VAD */
+    function handleMic(e){
+      const data = e.inputBuffer.getChannelData(0);
+      let sum=0; for (let i=0;i<data.length;i++){ const v=data[i]; sum+=v*v; }
+      const rms = Math.sqrt(sum/data.length);
+  
+      // UI
+      if (rms > VAD_THRESH && listening) indicator.classList.add('listening');
+      else indicator.classList.remove('listening');
+  
+      // Barge-in: instant stop
+      if (playing && rms > BARGE_VAD){
+        cutOutputNow();                      // hard stop NOW
+        dropUntilTranscript = true;          // ignore old stream
+        outLeftover = new Uint8Array(0);
+        sawWavHeader = false;
+  
+        playing=false; listening=true;
+        indicator.classList.remove('playing');
+        indicator.classList.add('listening');
+  
+        // best-effort notify server (but we don't rely on it)
+        try { wsIn?.send(JSON.stringify({ type:'cancel_audio' })); } catch {}
+      }
+  
+      // send mic frames while listening
+      if (listening && wsIn && wsIn.readyState===WebSocket.OPEN){
+        const pcm16 = new Int16Array(data.length);
+        for (let i=0;i<data.length;i++){
+          const s=Math.max(-1, Math.min(1, data[i]));
+          pcm16[i] = s<0 ? s*0x8000 : s*0x7fff;
+        }
+        try {
+          wsIn.send(JSON.stringify({
+            type:'input_audio_buffer.append',
+            audio: btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)))
+          }));
+        } catch {}
+      }
     }
   
-    playPcmInt16(evt.data);
-  }
+    /* WS OUT */
+    function onWsOutMessage(evt){
+      if (typeof evt.data === 'string'){
+        let msg;
+        try { msg = JSON.parse(evt.data); } catch {}
+        if (msg){
+          if (msg.type === 'transcript'){
+            addTranscript(msg.text);
+            // Next transcript marks new reply → accept audio, restore speaker
+            if (dropUntilTranscript){
+              dropUntilTranscript = false;
+              restoreOutput();               // re-open speaker path
+              playing = false;
+              listening = false;
+              indicator.classList.remove('listening');
+            }
+            return;
+          }
+          if (msg.type === 'audio.complete'){
+            playing=false; listening=true;
+            indicator.classList.remove('playing');
+            indicator.classList.add('listening');
+            return;
+          }
+        }
+      }
   
-  /* ---------- Playback & UI ---------- */
-  function addTranscript(text) {
-    if (transcriptList.firstElementChild?.style.opacity) transcriptList.innerHTML = "";
-    const li = document.createElement("li");
-    li.textContent = text;
-    transcriptList.appendChild(li);
-    transcriptList.scrollTop = transcriptList.scrollHeight;
-  }
+      // Drop ALL audio bytes while waiting for next transcript
+      if (dropUntilTranscript) return;
   
-  function playPcmInt16(buf) {
-    const i16 = new Int16Array(buf);
-    const f32 = new Float32Array(i16.length);
-    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
+      if (evt.data instanceof ArrayBuffer) {
+        handleOutBinary(evt.data);
+      } else if (evt.data instanceof Blob) {
+        evt.data.arrayBuffer().then(handleOutBinary).catch(()=>{});
+      }
+    }
   
-    const audioBuffer = audioCtx.createBuffer(1, f32.length, SR);
-    audioBuffer.getChannelData(0).set(f32);
+    function handleOutBinary(ab){
+      if (!audioCtx || !ttsGain || outputCut) return; // don't schedule while cut
   
-    const src = audioCtx.createBufferSource();
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0;
-    src.buffer = audioBuffer;
-    src.connect(gain).connect(audioCtx.destination);
+      if (!playing){
+        playing=true; listening=false;
+        indicator.classList.remove('listening');
+        indicator.classList.add('playing');
+      }
   
-    const startAt = Math.max(playCursor, audioCtx.currentTime + 0.01);
-    const fadeTime = 0.005;
-    gain.gain.setValueAtTime(0, startAt);
-    gain.gain.linearRampToValueAtTime(1, startAt + fadeTime);
+      let u8 = new Uint8Array(ab);
   
-    src.start(startAt);
-    playCursor = startAt + audioBuffer.duration;
+      // stitch carry byte
+      if (outLeftover.length){
+        const merged = new Uint8Array(outLeftover.length + u8.length);
+        merged.set(outLeftover, 0); merged.set(u8, outLeftover.length);
+        u8 = merged; outLeftover = new Uint8Array(0);
+      }
   
-    activeSources.push(src);
-    src.onended = () => {
-      activeSources = activeSources.filter(s => s !== src);
-      if (!playing) indicator.classList.remove("playing");
-    };
-  }
+      // WAV header detect/strip once
+      if (!sawWavHeader && looksLikeWav(u8)){
+        const off = wavDataOffset(u8);
+        if (off > 0 && u8.length > off){ u8 = u8.slice(off); sawWavHeader=true; }
+        else { outLeftover=u8; return; }
+      }
   
-  function cancelPlayback() {
-    activeSources.forEach(s => { try { s.stop(); } catch (e) {} });
-    activeSources.length = 0;
-    playCursor = audioCtx.currentTime;
-  }
+      // even bytes for Int16
+      if (u8.byteLength % 2 !== 0){
+        outLeftover = u8.slice(u8.byteLength-1);
+        u8 = u8.slice(0, u8.byteLength-1);
+      }
+      if (!u8.byteLength) return;
   
-  /* ---------- Cleanup ---------- */
-  function cleanup() {
-    cancelPlayback();
-    processor?.disconnect();
-    source?.disconnect();
-    audioCtx?.close();
-    wsIn?.close();
-    wsOut?.close();
-    listening = playing = false;
-    indicator.classList.remove("listening", "playing");
-    playCursor = 0;
-    micBuffer.length = 0;
-  }
-</script>
+      playPcmInt16(u8.buffer);
+    }
+  
+    // WAV helpers
+    function looksLikeWav(u8){
+      if (u8.length<12) return false;
+      return u8[0]===0x52 && u8[1]===0x49 && u8[2]===0x46 && u8[3]===0x46 &&
+             u8[8]===0x57 && u8[9]===0x41 && u8[10]===0x56 && u8[11]===0x45;
+    }
+    function wavDataOffset(u8){
+      let p=12;
+      while (p+8<=u8.length){
+        const size = u8[p+4] | (u8[p+5]<<8) | (u8[p+6]<<16) | (u8[p+7]<<24);
+        const id = String.fromCharCode(u8[p],u8[p+1],u8[p+2],u8[p+3]);
+        p+=8; if (id==='data') return p; p+=size;
+      }
+      return -1;
+    }
+  
+    /* Playback & UI */
+    function addTranscript(text){
+      if (transcriptList.firstElementChild?.style.opacity) transcriptList.innerHTML="";
+      const li=document.createElement('li'); li.textContent=text;
+      transcriptList.appendChild(li);
+      transcriptList.scrollTop = transcriptList.scrollHeight;
+    }
+  
+    function playPcmInt16(buf){
+      if (!audioCtx || outputCut) return;
+      if ((buf.byteLength % 2)!==0) return;
+  
+      const i16 = new Int16Array(buf);
+      const f32 = new Float32Array(i16.length);
+      for (let i=0;i<i16.length;i++) f32[i] = i16[i]/0x8000;
+  
+      const audioBuffer = audioCtx.createBuffer(1, f32.length, SR);
+      audioBuffer.getChannelData(0).set(f32);
+  
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioBuffer;
+  
+      // Route ONLY through ttsGain so cutOutputNow() silences instantly
+      src.connect(ttsGain);
+  
+      const startAt = Math.max(playCursor, audioCtx.currentTime + 0.003);
+      src.start(startAt);
+      playCursor = startAt + audioBuffer.duration;
+  
+      activeSources.push(src);
+      src.onended = () => {
+        activeSources = activeSources.filter(s => s !== src);
+        if (!playing) indicator.classList.remove('playing');
+      };
+    }
+  
+    /* Cleanup */
+    function cleanup(){
+      cancelPlayback();
+      destroyMicNodes();
+      try { audioCtx?.close(); } catch {};
+      audioCtx=null; ttsGain=null; outputCut=false;
+  
+      listening=playing=false;
+      indicator.classList.remove('listening','playing');
+      transcriptList.innerHTML = '<li style="opacity:.6">Transcript will appear here…</li>';
+  
+      outLeftover=new Uint8Array(0);
+      sawWavHeader=false;
+      dropUntilTranscript=false;
+    }
+  </script>
+  
+  
   
 </body>
+
 </html>

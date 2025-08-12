@@ -31,7 +31,7 @@ class TTSEngine:
         ctl = self._qsession.play_and_rotate()
         ctl.close()
         # header
-        yield self.build_wav_header()
+        #yield self.build_wav_header()
         # then chunks
         for chunk in ctl.stream():
             yield chunk
